@@ -7,12 +7,13 @@ import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.Axis;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.DateTickMarkPosition;
-import org.jfree.chart.plot.IntervalMarker;
-import org.jfree.chart.plot.Marker;
-import org.jfree.chart.plot.ValueMarker;
-import org.jfree.chart.plot.XYPlot;
+import org.jfree.chart.plot.*;
 import org.jfree.chart.renderer.category.BoxAndWhiskerRenderer;
+import org.jfree.chart.renderer.category.GroupedStackedBarRenderer;
 import org.jfree.chart.renderer.xy.*;
+import org.jfree.data.KeyToGroupMap;
+import org.jfree.data.category.CategoryDataset;
+import org.jfree.data.category.DefaultCategoryDataset;
 import org.jfree.data.time.Day;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
@@ -30,67 +31,106 @@ import java.util.List;
 public class DifferenceChart extends ApplicationFrame {
 
     public DifferenceChart(double[] rightAggregateValues, double[] leftAggregateValues, double [] elementsKnowledgeRatio) {
-        super("no title");
+        super("Difference chart");
 
-        XYSeries rightAggregateValuesSeries = createXYSeries("Right aggregate values", rightAggregateValues, elementsKnowledgeRatio);
-        XYSeries leftAggregateValuesSeries = createXYSeries("Left aggregate values", leftAggregateValues, elementsKnowledgeRatio);
+        double[] fractionOfProductsBetterThanElement = ChartDataProvider.getFractionOfProductsBetterThanElement(rightAggregateValues);
 
-        XYSeriesCollection seriesCollection = new XYSeriesCollection();
-        seriesCollection.addSeries(rightAggregateValuesSeries);
-        seriesCollection.addSeries(leftAggregateValuesSeries);
-        JFreeChart aggregateFreeChart = createJFreeChart(seriesCollection);
+        double[] fractionOfProductsWorstThanElement = ChartDataProvider.getFractionOfProductsWorstThanElement(leftAggregateValues);
 
-        drawIntervalLines(aggregateFreeChart, elementsKnowledgeRatio);
+        double[] centerAreasForElement = ChartDataProvider.getCenterAreaForElement(fractionOfProductsBetterThanElement, fractionOfProductsWorstThanElement);
+
+        JFreeChart aggregateFreeChart = createJFreeChart(fractionOfProductsBetterThanElement,
+                centerAreasForElement, fractionOfProductsWorstThanElement);
+
         final ChartPanel chartPanel = new ChartPanel(aggregateFreeChart);
 
         chartPanel.setPreferredSize(new java.awt.Dimension(900, 670));
         setContentPane(chartPanel);
+
+        printRecomendation(centerAreasForElement, fractionOfProductsBetterThanElement);
     }
 
 
-    public JFreeChart createJFreeChart(XYSeriesCollection xySeriesCollection){
-        final JFreeChart chart = ChartFactory.createXYAreaChart(
+    public JFreeChart createJFreeChart(double [] rightFraction, double [] centerFraction, double [] leftFraction){
+        final JFreeChart chart = ChartFactory.createStackedBarChart(
                 "Aggregate values",
                 "Set element",
                 "Right/Left aggregate values",
-                xySeriesCollection
+                createDataset(rightFraction, centerFraction, leftFraction),
+                PlotOrientation.VERTICAL,    // the plot orientation
+                true,                        // legend
+                true,                        // tooltips
+                false
         );
         chart.setBackgroundPaint(Color.gray);
-
-        XYDotRenderer renderer = new XYDotRenderer();
-        renderer.setDotHeight(7);
-        renderer.setDotWidth(7);
-        final XYPlot plot = chart.getXYPlot();
-        plot.setRenderer(renderer);
-
-
+        CategoryPlot plot = (CategoryPlot) chart.getPlot();
+        GroupedStackedBarRenderer groupStackedRenderer = createGroupStackedRenderer();
+        plot.setRenderer(groupStackedRenderer);
         return chart;
     }
 
-    public XYSeries createXYSeries(String seriesName, double [] aggregateValues, double [] elementsKnowledgeRatio){
-        XYSeries xySeries = new XYSeries(seriesName);
-        for(int i = 0 ; i < aggregateValues.length; i++){
-            //xySeries.add(elementsKnowledgeRatio[i], aggregateValues[i]);
-            xySeries.add(i + 1, aggregateValues[i]);
+    private CategoryDataset createDataset(double [] rightfraction, double [] centerFraction, double [] leftFraction){
+        int numberOfElements = rightfraction.length;
+        DefaultCategoryDataset result = new DefaultCategoryDataset();
+        for(int i = 0; i < numberOfElements; i++){
+            result.addValue(leftFraction[i], "worse" , i + 1 + "");
+            result.addValue(centerFraction[i], "center" , i + 1 + "");
+            result.addValue(rightfraction[i], "better", i + 1 + "");
         }
-        return xySeries;
+        return result;
     }
 
-    private void drawIntervalLines(JFreeChart chart, double [] elementsKnowledgeRatio){
-        XYPlot xyPlot = chart.getXYPlot();
-        Font myFont = new Font("Courier", Font.PLAIN, 20);
-        for(int i = 1; i <= elementsKnowledgeRatio.length; i++){
-            ValueMarker marker = new ValueMarker(i);  // position is the value on the axis
-/*            marker.setLabel("x " + i);*/
-            marker.setLabelAnchor(RectangleAnchor.BOTTOM );
-            marker.setLabelFont(myFont);
-            marker.setLabelTextAnchor( TextAnchor.BOTTOM_LEFT );
-            marker.setPaint(Color.gray);
-            xyPlot.addDomainMarker(marker);
+    private GroupedStackedBarRenderer createGroupStackedRenderer(){
+        GroupedStackedBarRenderer renderer = new GroupedStackedBarRenderer();
+        KeyToGroupMap map = new KeyToGroupMap("G1");
+        map.mapKeyToGroup("better", "G1");
+        map.mapKeyToGroup("center", "G1");
+        map.mapKeyToGroup("worse", "G1");
+        renderer.setSeriesToGroupMap(map);
+        renderer.setItemMargin(0.0);
+        Paint p1 = new GradientPaint(
+                0.0f, 0.0f, new Color(0x22, 0x22, 0xFF), 0.0f, 0.0f, new Color(0x88, 0x88, 0xFF)
+        );
+        renderer.setSeriesPaint(0, p1);
+        renderer.setSeriesPaint(3, p1);
+        renderer.setSeriesPaint(7, p1);
 
+        Paint p2 = new GradientPaint(
+                0.0f, 0.0f, new Color(0x22, 0xFF, 0x22), 0.0f, 0.0f, new Color(0x88, 0xFF, 0x88)
+        );
+        renderer.setSeriesPaint(1, p2);
+        renderer.setSeriesPaint(4, p2);
+        renderer.setSeriesPaint(8, p2);
 
+        Paint p3 = new GradientPaint(
+                0.0f, 0.0f, new Color(0xFF, 0x22, 0x22), 0.0f, 0.0f, new Color(0xFF, 0x88, 0x88)
+        );
+        renderer.setSeriesPaint(2, p3);
+        renderer.setSeriesPaint(5, p3);
+        renderer.setSeriesPaint(9, p3);
 
+        return renderer;
+    }
+
+    /*
+    print the most popular and the best items
+     */
+    private void printRecomendation(double [] centerValues, double [] rightValues){
+        int valuesLength = centerValues.length;
+        int theMostPopularItem = 0;
+        int theBestItem = 0;
+        for(int i = 0;i < valuesLength; i++){
+            if(centerValues[i] < centerValues[theMostPopularItem])
+                theMostPopularItem = i;
+            if(rightValues[i] < rightValues[theBestItem])
+                theBestItem = i;
+            System.out.println("right value : " + rightValues[i]);
         }
+        //for chart legend needs
+        theBestItem = theBestItem + 1;
+        theMostPopularItem = theMostPopularItem + 1;
+        System.out.println("The best item : " + theBestItem);
+        System.out.println("The most popular item : " + theMostPopularItem);
     }
 
 }
